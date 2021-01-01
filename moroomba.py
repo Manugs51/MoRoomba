@@ -21,6 +21,18 @@ orientaciones = {'derecha': 'derecha', 'arriba': 'arriba', 'izquierda': 'izquier
 
 # --------------------------------------------------------------------------
 
+def oritacion2posicion(orientacion):
+    if orientacion == "derecha":
+        return np.array([0, 1])
+    if orientacion == "arriba":
+        return np.array([-1, 0])
+    if orientacion == "izquierda":
+        return np.array([0, -1])
+    if orientacion == "abajo":
+        return np.array([1, 0])
+
+# --------------------------------------------------------------------------
+
 def getRobotHandles(clientID):
     # Motor handles
     _,lmh = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx_leftMotor',sim.simx_opmode_blocking)
@@ -67,50 +79,131 @@ def getSonar(clientID, hRobot):
 #-------------------------------------------------------------------
 
 def comprobar_laterales(sonar, orientacion):
-    matriz_descubierta = [[-1, -1, -1], [-1, 0, -1], [-1, -1, -1]]
+    max_distance = 0.5
+    matriz_descubierta = np.array([[-1, 0, -1], [0, 0, 0], [-1, 0, -1]])
     # Izquierda
-    if sonar[0] < 0.5 or sonar[15] < 0.5:
-        matriz_descubierta[0][1] = 1
-    else:
-        matriz_descubierta[0][1] = 0
-    # Delante
-    if sonar[3] < 0.5 or sonar[4] < 0.5:
-        matriz_descubierta[1][2] = 1
-    else:
-        matriz_descubierta[1][2] = 0
-    # Derecha
-    if sonar[7] < 0.5 or sonar[8] < 0.5:
-        matriz_descubierta[2][1] = 1
-    else:
-        matriz_descubierta[2][1] = 0
-    # Detras
-    if sonar[11] < 0.5 or sonar[12] < 0.5:
+    if sonar[0] < max_distance or sonar[15] < max_distance:
         matriz_descubierta[1][0] = 1
-    else:
-        matriz_descubierta[1][0] = 0
-    # Rotar
-    aux = matriz_descubierta #TODO esto esta mal
-    if orientacion == orientaciones['abajo']:
-        for i in range(3):
-            for j in range(3):
-                aux[j, 2-i] = matriz_descubierta[i, j]
-    elif orientacion == orientaciones['izquierda']:
-        for i in range(3):
-            for j in range(3):
-                aux[2-i, 2-j] = matriz_descubierta[i, j]
-    elif orientacion == orientaciones['arriba']:
-        for i in range(3):
-            for j in range(3):
-                aux[j, 2-i] = matriz_descubierta[i, j]
 
-    matriz_descubierta = aux
+    # Delante
+    if sonar[3] < max_distance or sonar[4] < max_distance:
+        matriz_descubierta[0][1] = 1
+
+    # Derecha
+    if sonar[7] < max_distance or sonar[8] < max_distance:
+        matriz_descubierta[1][2] = 1
+
+    # Detras
+    if sonar[11] < max_distance or sonar[12] < max_distance:
+        matriz_descubierta[2][1] = 1
 
     return matriz_descubierta
 
-def mapear(sonar, orientacion):
+#-------------------------------------------------------------------
+
+def rotate_matrix(matriz, orientacion):
+    aux = matriz
+    if orientacion == orientaciones['abajo']:
+        return np.rot90(aux, 2)
+    if orientacion == orientaciones['izquierda']:
+        return np.rot90(aux, -1)
+    if orientacion == orientaciones['derecha']:
+        return np.rot90(aux, 1)
+
+    return aux
+
+#-------------------------------------------------------------------
+
+# dir_giro es o derecha o izquierda
+def get_next_orientacion(orientacion, dir_giro):
+    if dir_giro == "derecha":
+        if orientacion == "arriba":
+            orientacion = "derecha"
+        elif orientacion == "derecha":
+            orientacion = "abajo"
+        elif orientacion == "abajo":
+            orientacion = "izquierda"
+        else:
+            orientacion = "arriba"
+    
+    else:
+        if orientacion == "arriba":
+            orientacion = "izquierda"
+        elif orientacion == "derecha":
+            orientacion = "arriba"
+        elif orientacion == "abajo":
+            orientacion = "derecha"
+        else:
+            orientacion = "abajo"
+
+    return orientacion
+
+
+#-------------------------------------------------------------------
+
+def rotate_robot(matriz_descubierta, orientacion, clientID, hRobot):
+    # Voy a asumir que empezamos en una pared para simplificar de forma gorda
+    lspeed = 0
+    rspeed = 0
+    rotation_speed = 0.3
+    if matriz_descubierta[1, 0] == 1 and matriz_descubierta[1, 2] == 1:
+        # Si me veo en esta situación prefiero morir a pensar que hacer :)
+        pass
+    elif matriz_descubierta[1, 2] == 0:
+        lspeed = rotation_speed
+        next_orientacion = get_next_orientacion(orientacion, "derecha")
+    elif matriz_descubierta[1, 0] == 0:
+        rspeed = rotation_speed
+        next_orientacion = get_next_orientacion(orientacion, "izquierda")
+
+
+    while(1):
+        angles = sim.simxGetObjectOrientation(clientID, hRobot[-1], -1, sim.simx_opmode_blocking)
+        epsilon = 0.01
+        if orientacion == "arriba" or orientacion == "abajo":
+            if angles[1][1] > -epsilon and angles[1][1] < epsilon:
+                break
+        else:
+            abs_angle = abs(angles[1][1])
+            if abs_angle > (np.pi / 2 - epsilon):
+                break
+        setSpeed(clientID, hRobot, lspeed, rspeed)
+        #print(angles[1][1])
+        angles = sim
+    return next_orientacion
+
+def mapear(sonar, orientacion, mapa, posicion, clientID, hRobot, verbose=1):
     matriz_descubierta = comprobar_laterales(sonar, orientacion)
-    print("mapeando")
-    return 1, 1
+
+    lspeed = 1
+    rspeed = 1
+    if matriz_descubierta[0, 1] == 2:
+        return mapa, posicion, orientacion, True
+
+    matriz_rotada = rotate_matrix(matriz_descubierta, orientacion)
+    # Arriba
+    mapa[posicion[0] - 1, posicion[1]] = matriz_rotada[0, 1]
+    # Izquierda
+    mapa[posicion[0], posicion[1] - 1] = matriz_rotada[1, 0]
+    # Derecha
+    mapa[posicion[0], posicion[1] + 1] = matriz_rotada[1, 2]
+
+    posicion = posicion + oritacion2posicion(orientacion)
+
+    if matriz_descubierta[0, 1] == 1:
+        if verbose > 0:
+            print("ROTANDO")
+        orientacion = rotate_robot(matriz_descubierta, orientacion, clientID, hRobot)
+
+
+    if verbose > 0:
+        #print(matriz_descubierta[0])
+        #print(matriz_descubierta[1])
+        #print(matriz_descubierta[2])
+
+        print(orientacion)
+
+    return mapa, posicion, orientacion, False
 
 #-------------------------------------------------------------------
 
@@ -125,11 +218,20 @@ def cargar():
 # --------------------------------------------------------------------------
 
 def set_vacuuming(clientID, vacuuming):
-    print("Vacuuming:", vacuuming)
     if vacuuming:
         sim.simxSetIntegerSignal(clientID, "vacuuming", 1, sim.simx_opmode_blocking)
     else:
         sim.simxSetIntegerSignal(clientID, "vacuuming", 0, sim.simx_opmode_blocking)
+
+# --------------------------------------------------------------------------
+
+def save_map_to_file(mapa, file_path):
+    np.savetxt(file_path, mapa.astype(int), fmt='%i', delimiter=";")
+    #with open(file_path, 'wb') as f:
+    #    for line in mapa:
+    #        print(line)
+    #        np.savetxt(f, line, fmt='%.2f')
+
 # --------------------------------------------------------------------------
 
 def main():
@@ -138,18 +240,26 @@ def main():
     print('### Number of arguments:', len(sys.argv), 'arguments.')
     print('### Argument List:', str(sys.argv))
 
+    # AQUI SE CAMBIA DONDE SE GUARDAN LOS LOGS DE ERROR Y EL MAPA
+    path = "C:\\Users\\Miguel\\Documents\\MoRoomba\\"
+    sys.stderr = open(path + "logerr.txt", "w")
+
     estado = estadosMoRoomba['mapeando']
     '''
         -2: No observado fuera de rango
         -1: No observado en rango
          0: Vacio
          1: Obstaculo
+         2: Base
     '''
-    mapa = [[-2 for y in range(100)] for x in range(100)]
-    mapa[1][1] = 0
-    posicion = (1, 1)
+    map_size = 100
+    mapa = np.ones((map_size, map_size)) * -2
+    half_map = map_size // 2
 
-    orientacion = orientaciones['derecha']
+    mapa[half_map][half_map] = 2
+    posicion = np.array([half_map, half_map])
+
+    orientacion = orientaciones['arriba']
 
     sim.simxFinish(-1) # just in case, close all opened connections
 
@@ -163,30 +273,28 @@ def main():
         print('### Connected to remote API server')
         hRobot = getRobotHandles(clientID) ##hRobot contains '[lmh, rmh], sonar, cam'
 
-        ixxx = 0
         while sim.simxGetConnectionId(clientID) != -1:
             # Perception
             sonar = getSonar(clientID, hRobot)
 
-            # TODO borrar, solo es prueba
-            if ixxx == 0:
-                set_vacuuming(clientID, True)
-            elif ixxx > 0:
-                set_vacuuming(clientID, False)
-                ixxx = -1
-            ixxx += 1
-
             if estado == estadosMoRoomba['mapeando']:
-                lspeed, rspeed = mapear(sonar, orientacion)
+                set_vacuuming(clientID, False)
+                mapa, posicion, orientacion, ended = mapear(sonar, orientacion, mapa, posicion, clientID, hRobot)
+                if ended:
+                    print("Ended")
+                    sleep(5000)
+                save_map_to_file(mapa, path + "mapa.csv")
+
             elif estado == estadosMoRoomba['limpiando']:
+                set_vacuuming(clientID, True)
                 lspeed, rspeed = limpiar()
             else:
                 lspeed, rspeed = cargar()
 
 
             # Action
-            setSpeed(clientID, hRobot, lspeed, rspeed)
-            time.sleep(1)
+            setSpeed(clientID, hRobot, 1, 1)
+            time.sleep(0.5)
 
         print('### Finishing...')
         sim.simxFinish(clientID)

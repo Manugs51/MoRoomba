@@ -2,3 +2,6 @@ remoteApi.dll
 sim.py
 simConst.py
 __pycache__
+log.txt
+logerr.txt
+mapa.csv
