@@ -13,14 +13,91 @@ import time
 # import cv2 as cv
 import numpy as np
 import sim
+from collections import defaultdict 
 
 
 estadosMoRoomba = {'mapeando': 'mapeando', 'limpiando': 'limpiando', 'recargando': 'recargando'}
 
 orientaciones = {'derecha': 'derecha', 'arriba': 'arriba', 'izquierda': 'izquierda', 'abajo': 'abajo'}
 
+
 # --------------------------------------------------------------------------
 
+def transform_map_to_edges(mapa):
+    edges = [] # [[]]
+    '''
+        Para cada casilla se comprueban los vecinos, solo el de la derecha y abajo de cada uno, asi se asegura el 
+          que se cubre todo sin repeticion. Solo se comprueba si:
+            1: la propia casilla está vacia (0, puede navegar por ahi el robot) y
+            2: se añade si el respectivo vecino tambien es 0
+          Las relaciones de vecindad son bidireccionales [(x,m),(y,n)] = [(y,n),(x,m)], aunque nunca se van a dar repeticiones
+    '''
+    for i in range(len(mapa) - 1):
+        for j in range(len(mapa[0]) - 1):
+            #print(i)
+            #print(j)
+            #print(mapa)
+            if mapa[i][j] == 0:
+                if mapa[i + 1][ j] == 0:
+                    edges.append([(i, j),(i + 1, j)])
+                if mapa[i][j + 1] == 0:
+                    edges.append([(i, j),(i, j + 1)])
+    return edges
+
+# --------------------------------------------------------------------------
+# https://www.geeksforgeeks.org/building-an-undirected-graph-and-finding-shortest-path-using-dictionaries-in-python/
+# Python implementation to find the  
+# shortest path in the graph using  
+# dictionaries  
+  
+# Function to find the shortest 
+# path between two nodes of a graph 
+def BFS_SP(graph, start, goal): 
+    explored = [] 
+      
+    # Queue for traversing the  
+    # graph in the BFS 
+    queue = [[start]] 
+      
+    # If the desired node is  
+    # reached 
+    if start == goal: 
+        print("Same Node") 
+        return
+      
+    # Loop to traverse the graph  
+    # with the help of the queue 
+    while queue: 
+        path = queue.pop(0) 
+        node = path[-1] 
+          
+        # Codition to check if the 
+        # current node is not visited 
+        if node not in explored: 
+            neighbours = graph[node] 
+              
+            # Loop to iterate over the  
+            # neighbours of the node 
+            for neighbour in neighbours: 
+                new_path = list(path) 
+                new_path.append(neighbour) 
+                queue.append(new_path) 
+                  
+                # Condition to check if the  
+                # neighbour node is the goal 
+                if neighbour == goal: 
+                    print("Shortest path = ", *new_path) 
+                    return
+            explored.append(node) 
+  
+    # Condition when the nodes  
+    # are not connected 
+    print("So sorry, but a connecting"\
+                "path doesn't exist :(") 
+    return
+
+
+# --------------------------------------------------------------------------
 def oritacion2posicion(orientacion):
     if orientacion == "derecha":
         return np.array([0, 1])
@@ -264,7 +341,8 @@ def main():
     print('### Argument List:', str(sys.argv))
 
     # AQUI SE CAMBIA DONDE SE GUARDAN LOS LOGS DE ERROR Y EL MAPA
-    path = "C:\\Users\\Miguel\\Documents\\MoRoomba\\"
+    # path = "C:\\Users\\Miguel\\Documents\\MoRoomba\\"
+    path = "D:\\Users\\Manuel Guerrero\\Desktop\\WorkingDirectoryCopelia\\MoRoomba\\MoRoomba\\"
     sys.stderr = open(path + "logerr.txt", "w")
 
     estado = estadosMoRoomba['mapeando']
@@ -283,6 +361,9 @@ def main():
     posicion = np.array([half_map, half_map])
 
     orientacion = orientaciones['arriba']
+    
+    graph = defaultdict(list)
+    edges = []
 
     sim.simxFinish(-1) # just in case, close all opened connections
 
@@ -305,6 +386,12 @@ def main():
                 mapa, posicion, orientacion, ended = mapear(sonar, orientacion, mapa, posicion, clientID, hRobot)                 
                 save_map_to_file(mapa, path + "mapa.csv")
                 if ended:
+                    edges = transform_map_to_edges(mapa)
+                    for edge in edges:
+                        a, b = edge[0], edge[1]
+                        # Se crea el grafo como una lista de adyacencias
+                        graph[a].append(b)
+                        graph[b].append(a)
                     print("Ended")
                     time.sleep(5000)
 
