@@ -144,7 +144,7 @@ def get_next_orientacion(orientacion, dir_giro):
 
 def rotate_robot(matriz_descubierta, orientacion, clientID, hRobot):
     # Voy a asumir que empezamos en una pared para simplificar de forma gorda
-    rotation_speed = 0.15
+    rotation_speed = 0.1
     lspeed = -rotation_speed
     rspeed = -rotation_speed
     if matriz_descubierta[1, 0] == 1 and matriz_descubierta[1, 2] == 1:
@@ -199,6 +199,7 @@ def mapear(sonar, orientacion, mapa, posicion, clientID, hRobot, verbose=1):
     if 2 in mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2] and \
         mapa[posicion[0]+1, posicion[1]] != 2 and mapa[posicion[0], posicion[1]] != 2:
         #print(mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2])
+        #if mapa[posicion[0]+1, posicion[1] + 1]: 
         mapa = fill_reachable_map(mapa)
         return mapa, posicion, orientacion, True
 
@@ -245,12 +246,11 @@ def save_map_to_file(mapa, file_path):
 # --------------------------------------------------------------------------
 
 def fill_reachable_map(mapa):
-    for i in range(mapa.shape[0]):
-        in_horizontal_limit = False
-        for j in range(mapa.shape[1]):
-            if mapa[i, j] == 1:
-                in_horizontal_limit = not in_horizontal_limit
-            elif mapa[i, j] == -2 and in_horizontal_limit:
+    for i in range(1, mapa.shape[0]):
+        for j in range(1, mapa.shape[1]):
+            if (mapa[i - 1, j] == 0 or mapa[i - 1, j] == -1) \
+                and (mapa[i, j - 1] == 0 or mapa[i, j - 1] == -1) \
+                and mapa[i, j] == -2:
                 mapa[i, j] = -1
 
     return mapa
@@ -275,7 +275,7 @@ def main():
          1: Obstaculo
          2: Base
     '''
-    map_size = 100
+    map_size = 300
     mapa = np.ones((map_size, map_size)) * -2
     half_map = map_size // 2
 
@@ -314,6 +314,8 @@ def main():
             else:
                 lspeed, rspeed = cargar()
 
+            #pos = sim.simxGetObjectPosition(clientID, hRobot[-1], -1, sim.simx_opmode_blocking)
+            #if orientacion == "arriba" or orientacion == "abajo":
 
             # Action
             setSpeed(clientID, hRobot, 1, 1)
