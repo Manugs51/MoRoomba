@@ -79,10 +79,11 @@ def getSonar(clientID, hRobot):
 #-------------------------------------------------------------------
 
 def comprobar_laterales(sonar, orientacion):
-    max_distance = 0.5
+    max_distance = 0.4
+    max_distance_sides = 0.7
     matriz_descubierta = np.array([[-1, 0, -1], [0, 0, 0], [-1, 0, -1]])
     # Izquierda
-    if sonar[0] < max_distance or sonar[15] < max_distance:
+    if sonar[0] < max_distance_sides or sonar[15] < max_distance_sides:
         matriz_descubierta[1][0] = 1
 
     # Delante
@@ -90,11 +91,11 @@ def comprobar_laterales(sonar, orientacion):
         matriz_descubierta[0][1] = 1
 
     # Derecha
-    if sonar[7] < max_distance or sonar[8] < max_distance:
+    if sonar[7] < max_distance_sides or sonar[8] < max_distance_sides:
         matriz_descubierta[1][2] = 1
 
     # Detras
-    if sonar[11] < max_distance or sonar[12] < max_distance:
+    if sonar[11] < max_distance_sides or sonar[12] < max_distance_sides:
         matriz_descubierta[2][1] = 1
 
     return matriz_descubierta
@@ -106,9 +107,9 @@ def rotate_matrix(matriz, orientacion):
     if orientacion == orientaciones['abajo']:
         return np.rot90(aux, 2)
     if orientacion == orientaciones['izquierda']:
-        return np.rot90(aux, -1)
-    if orientacion == orientaciones['derecha']:
         return np.rot90(aux, 1)
+    if orientacion == orientaciones['derecha']:
+        return np.rot90(aux, -1)
 
     return aux
 
@@ -143,9 +144,9 @@ def get_next_orientacion(orientacion, dir_giro):
 
 def rotate_robot(matriz_descubierta, orientacion, clientID, hRobot):
     # Voy a asumir que empezamos en una pared para simplificar de forma gorda
-    lspeed = 0
-    rspeed = 0
-    rotation_speed = 0.3
+    rotation_speed = 0.15
+    lspeed = -rotation_speed
+    rspeed = -rotation_speed
     if matriz_descubierta[1, 0] == 1 and matriz_descubierta[1, 2] == 1:
         # Si me veo en esta situación prefiero morir a pensar que hacer :)
         pass
@@ -159,7 +160,7 @@ def rotate_robot(matriz_descubierta, orientacion, clientID, hRobot):
 
     while(1):
         angles = sim.simxGetObjectOrientation(clientID, hRobot[-1], -1, sim.simx_opmode_blocking)
-        epsilon = 0.01
+        epsilon = 0.005
         if orientacion == "arriba" or orientacion == "abajo":
             if angles[1][1] > -epsilon and angles[1][1] < epsilon:
                 break
@@ -172,36 +173,49 @@ def rotate_robot(matriz_descubierta, orientacion, clientID, hRobot):
         angles = sim
     return next_orientacion
 
+#-------------------------------------------------------------------
+
 def mapear(sonar, orientacion, mapa, posicion, clientID, hRobot, verbose=1):
     matriz_descubierta = comprobar_laterales(sonar, orientacion)
 
     lspeed = 1
     rspeed = 1
-    if matriz_descubierta[0, 1] == 2:
-        return mapa, posicion, orientacion, True
-
+    
     matriz_rotada = rotate_matrix(matriz_descubierta, orientacion)
     # Arriba
-    mapa[posicion[0] - 1, posicion[1]] = matriz_rotada[0, 1]
+    if mapa[posicion[0] - 1, posicion[1]] == -2:
+        mapa[posicion[0] - 1, posicion[1]] = matriz_rotada[0, 1]
     # Izquierda
-    mapa[posicion[0], posicion[1] - 1] = matriz_rotada[1, 0]
+    if mapa[posicion[0], posicion[1] - 1] == -2:
+        mapa[posicion[0], posicion[1] - 1] = matriz_rotada[1, 0]
     # Derecha
-    mapa[posicion[0], posicion[1] + 1] = matriz_rotada[1, 2]
+    if mapa[posicion[0], posicion[1] + 1] == -2:
+        mapa[posicion[0], posicion[1] + 1] = matriz_rotada[1, 2]
+    # Abajo
+    if mapa[posicion[0] + 1, posicion[1]] == -2:
+        mapa[posicion[0] + 1, posicion[1]] = matriz_rotada[2, 1]
 
-    posicion = posicion + oritacion2posicion(orientacion)
+
+    if 2 in mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2] and \
+        mapa[posicion[0]+1, posicion[1]] != 2 and mapa[posicion[0], posicion[1]] != 2:
+        #print(mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2])
+        mapa = fill_reachable_map(mapa)
+        return mapa, posicion, orientacion, True
 
     if matriz_descubierta[0, 1] == 1:
         if verbose > 0:
             print("ROTANDO")
         orientacion = rotate_robot(matriz_descubierta, orientacion, clientID, hRobot)
+    else:
+        posicion = posicion + oritacion2posicion(orientacion)
 
 
     if verbose > 0:
+        print(orientacion)
         #print(matriz_descubierta[0])
         #print(matriz_descubierta[1])
         #print(matriz_descubierta[2])
-
-        print(orientacion)
+        #print(mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2])
 
     return mapa, posicion, orientacion, False
 
@@ -227,10 +241,19 @@ def set_vacuuming(clientID, vacuuming):
 
 def save_map_to_file(mapa, file_path):
     np.savetxt(file_path, mapa.astype(int), fmt='%i', delimiter=";")
-    #with open(file_path, 'wb') as f:
-    #    for line in mapa:
-    #        print(line)
-    #        np.savetxt(f, line, fmt='%.2f')
+
+# --------------------------------------------------------------------------
+
+def fill_reachable_map(mapa):
+    for i in range(mapa.shape[0]):
+        in_horizontal_limit = False
+        for j in range(mapa.shape[1]):
+            if mapa[i, j] == 1:
+                in_horizontal_limit = not in_horizontal_limit
+            elif mapa[i, j] == -2 and in_horizontal_limit:
+                mapa[i, j] = -1
+
+    return mapa
 
 # --------------------------------------------------------------------------
 
@@ -279,11 +302,11 @@ def main():
 
             if estado == estadosMoRoomba['mapeando']:
                 set_vacuuming(clientID, False)
-                mapa, posicion, orientacion, ended = mapear(sonar, orientacion, mapa, posicion, clientID, hRobot)
+                mapa, posicion, orientacion, ended = mapear(sonar, orientacion, mapa, posicion, clientID, hRobot)                 
+                save_map_to_file(mapa, path + "mapa.csv")
                 if ended:
                     print("Ended")
-                    sleep(5000)
-                save_map_to_file(mapa, path + "mapa.csv")
+                    time.sleep(5000)
 
             elif estado == estadosMoRoomba['limpiando']:
                 set_vacuuming(clientID, True)
@@ -294,7 +317,7 @@ def main():
 
             # Action
             setSpeed(clientID, hRobot, 1, 1)
-            time.sleep(0.5)
+            time.sleep(0.75)
 
         print('### Finishing...')
         sim.simxFinish(clientID)
