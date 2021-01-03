@@ -15,6 +15,7 @@ import numpy as np
 import sim
 from collections import defaultdict 
 
+MAX_CHARGE = 300
 
 estadosMoRoomba = {'mapeando': 'mapeando', 'limpiando': 'limpiando', 'recargando': 'recargando'}
 
@@ -37,12 +38,13 @@ def transform_map_to_edges(mapa):
             #print(i)
             #print(j)
             #print(mapa)
-            if mapa[i][j] == 0:
-                if mapa[i + 1][ j] == 0:
+            if mapa[i][j] == 0 or mapa[i][j] >= 2:
+                if mapa[i + 1][j] == 0 or mapa[i + 1][j] >= 2:
                     edges.append([(i, j),(i + 1, j)])
-                if mapa[i][j + 1] == 0:
+                if mapa[i][j + 1] == 0 or mapa[i][j + 1] >= 2:
                     edges.append([(i, j),(i, j + 1)])
     return edges
+
 
 # --------------------------------------------------------------------------
 # https://www.geeksforgeeks.org/building-an-undirected-graph-and-finding-shortest-path-using-dictionaries-in-python/
@@ -65,12 +67,12 @@ def BFS_SP(graph, start, goal):
         print("Same Node") 
         return
       
-    # Loop to traverse the graph  
-    # with the help of the queue 
-    while queue: 
-        path = queue.pop(0) 
-        node = path[-1] 
-          
+    # Loop to traverse the graph
+    # with the help of the queue
+    while queue:
+        path = queue.pop(0)
+        node = path[-1]
+
         # Codition to check if the 
         # current node is not visited 
         if node not in explored: 
@@ -86,8 +88,8 @@ def BFS_SP(graph, start, goal):
                 # Condition to check if the  
                 # neighbour node is the goal 
                 if neighbour == goal: 
-                    print("Shortest path = ", *new_path) 
-                    return
+                    print("Shortest path = ", *new_path)
+                    return np.array(new_path)
             explored.append(node) 
   
     # Condition when the nodes  
@@ -219,6 +221,32 @@ def get_next_orientacion(orientacion, dir_giro):
 
 #-------------------------------------------------------------------
 
+def rotate_dir(clientID, hRobot, orientacion, dir="derecha", speed=.1):
+    if dir == "derecha":
+        lspeed = speed
+        rspeed = -speed
+    else:
+        lspeed = -speed
+        rspeed = speed
+    next_orientacion = get_next_orientacion(orientacion, dir)
+
+    while(1):
+        angles = sim.simxGetObjectOrientation(clientID, hRobot[-1], -1, sim.simx_opmode_blocking)
+        epsilon = 0.005
+        if orientacion == "arriba" or orientacion == "abajo":
+            if angles[1][1] > -epsilon and angles[1][1] < epsilon:
+                break
+        else:
+            abs_angle = abs(angles[1][1])
+            if abs_angle > (np.pi / 2 - epsilon):
+                break
+        setSpeed(clientID, hRobot, lspeed, rspeed)
+        angles = sim
+    return next_orientacion
+
+#-------------------------------------------------------------------
+
+
 def rotate_robot(matriz_descubierta, orientacion, clientID, hRobot):
     # Voy a asumir que empezamos en una pared para simplificar de forma gorda
     rotation_speed = 0.1
@@ -274,9 +302,7 @@ def mapear(sonar, orientacion, mapa, posicion, clientID, hRobot, verbose=1):
 
 
     if 2 in mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2] and \
-        mapa[posicion[0]+1, posicion[1]] != 2 and mapa[posicion[0], posicion[1]] != 2:
-        #print(mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2])
-        #if mapa[posicion[0]+1, posicion[1] + 1]: 
+        mapa[posicion[0]+1, posicion[1]] != 2 and mapa[posicion[0], posicion[1]] != 2: 
         mapa = fill_reachable_map(mapa)
         return mapa, posicion, orientacion, True
 
@@ -290,22 +316,46 @@ def mapear(sonar, orientacion, mapa, posicion, clientID, hRobot, verbose=1):
 
     if verbose > 0:
         print(orientacion)
-        #print(matriz_descubierta[0])
-        #print(matriz_descubierta[1])
-        #print(matriz_descubierta[2])
-        #print(mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2])
 
     return mapa, posicion, orientacion, False
 
 #-------------------------------------------------------------------
 
-def limpiar():
-    return 0, 0
+def limpiar(charge, posicion, path, orientacion, mapa, clientID, hRobot, graph):
+    set_vacuuming(clientID, True)
+    if len(path) < 2:
+        dirty_spot = search_closest_dirty_spot(posicion, orientacion, mapa)
+        if dirty_spot is None:
+            # Hacer que vuelva a la base. CASA LIMPIA, EXITO SEÑORES
+            pass
+        else:
+            path = BFS_SP(graph, posicion, dirty_spot)
+            print("CAMINO A LIMPIAR", path)
+    
+    posicion, orientacion, mapa, path = follow_path(path, orientacion, mapa, clientID, hRobot)
+    
+    mapa[i, j] = 0
+
+    charge = charge - 1
+
+    return charge, path, orientacion, mapa, posicion, 1, 1
 
 #-------------------------------------------------------------------
 
-def cargar():
-    return 0, 0
+def cargar(charge, path, orientacion, mapa, clientID, hRobot):
+    if len(path) > 1:
+        lspeed = 1
+        rspeed = 1
+    else:
+        charge = np.min([MAX_CHARGE, charge + 10])
+        print("Charging... (", charge, "/", MAX_CHARGE, ")", sep="")
+
+        lspeed = 0
+        rspeed = 0
+    
+    posicion, orientacion, mapa, path = follow_path(path, orientacion, mapa, clientID, hRobot)
+    
+    return charge, path, orientacion, mapa, posicion, lspeed, rspeed
 
 # --------------------------------------------------------------------------
 
@@ -334,6 +384,80 @@ def fill_reachable_map(mapa):
 
 # --------------------------------------------------------------------------
 
+def follow_path(path, orientacion, mapa, clientID, hRobot):
+    if len(path) < 2:
+        return path, orientacion, mapa, path
+
+    dest = path[1] - path[0]
+    pos = oritacion2posicion(orientacion)
+    dir_giro = "derecha"
+    if np.all(dest == -pos[::-1]):
+        dir_giro = "izquierda"
+
+    print(dest, oritacion2posicion(orientacion))
+    print(dest != oritacion2posicion(orientacion),np.any(dest != oritacion2posicion(orientacion)))
+    while(np.any(dest != oritacion2posicion(orientacion))):
+        orientacion = rotate_dir(clientID, hRobot, orientacion, dir_giro)
+        print(dest, oritacion2posicion(orientacion))
+    
+    mapa[path[0,0], path[0,1]] = 0
+    
+    path = path[1:]
+    return path[0], orientacion, mapa, path
+# --------------------------------------------------------------------------
+
+def dirty_floor(mapa):
+    for i in range(mapa.shape[0]):
+        for j in range(mapa.shape[1]):
+            if mapa[i, j] == -1 or mapa[i, j] == 0:
+                mapa[i, j] = 3
+    return mapa
+
+# --------------------------------------------------------------------------
+
+def get_graph_from_map(mapa):
+    graph = defaultdict(list)
+
+    edges = transform_map_to_edges(mapa)
+    for edge in edges:
+        a, b = edge[0], edge[1]
+        # Se crea el grafo como una lista de adyacencias
+        graph[a].append(b)
+        graph[b].append(a)
+
+    return graph
+
+# --------------------------------------------------------------------------
+
+def search_closest_dirty_spot(posicion, orientacion, mapa):
+    pos = oritacion2posicion(orientacion)
+    # inmediatamente delante
+    following = pos + posicion
+    following = following[0]
+    print("FOLLOWING", following)
+    if mapa[following[0], following[1]] == 3:
+        return following
+
+    # alrededor
+    alrededor = mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2]
+    pos = None
+    for i in range(2):
+        for j in range(2):
+            if alrededor[i, j] == 3:
+                pos = posicion + np.array([i - 1, j - 1])
+                return pos
+
+    # la que haya
+    for i in range(mapa.shape[0]):
+        for j in rage(mapa.shape[1]):
+            if mapa[i, j] == 3:
+                return np.array([i, j])        
+    
+    return None
+    
+    
+
+
 def main():
     print('### Program started')
 
@@ -342,7 +466,7 @@ def main():
 
     # AQUI SE CAMBIA DONDE SE GUARDAN LOS LOGS DE ERROR Y EL MAPA
     # path = "C:\\Users\\Miguel\\Documents\\MoRoomba\\"
-    path = "D:\\Users\\Manuel Guerrero\\Desktop\\WorkingDirectoryCopelia\\MoRoomba\\MoRoomba\\"
+    path = "C:\\Users\\Miguel\\Documents\\MoRoomba\\"
     sys.stderr = open(path + "logerr.txt", "w")
 
     estado = estadosMoRoomba['mapeando']
@@ -352,23 +476,26 @@ def main():
          0: Vacio
          1: Obstaculo
          2: Base
+         3: Sucio
     '''
     map_size = 300
     mapa = np.ones((map_size, map_size)) * -2
     half_map = map_size // 2
 
     mapa[half_map][half_map] = 2
-    posicion = np.array([half_map, half_map])
+    initial_position = np.array([half_map, half_map])
+    posicion = initial_position
 
     orientacion = orientaciones['arriba']
     
     graph = defaultdict(list)
-    edges = []
 
     sim.simxFinish(-1) # just in case, close all opened connections
 
     port = int(sys.argv[1])
     clientID = sim.simxStart('127.0.0.1', port, True, True, 2000, 5)
+
+    charge = 200 #MAX_CHARGE
 
     if clientID == -1:
         print('### Failed connecting to remote API server')
@@ -376,12 +503,17 @@ def main():
     else:
         print('### Connected to remote API server')
         hRobot = getRobotHandles(clientID) ##hRobot contains '[lmh, rmh], sonar, cam'
+        SECOND_INTERVAL = 1
 
         while sim.simxGetConnectionId(clientID) != -1:
             # Perception
             sonar = getSonar(clientID, hRobot)
 
+            start_time = time.time()
+
             if estado == estadosMoRoomba['mapeando']:
+                lspeed = 1
+                rspeed = 1
                 set_vacuuming(clientID, False)
                 mapa, posicion, orientacion, ended = mapear(sonar, orientacion, mapa, posicion, clientID, hRobot)                 
                 save_map_to_file(mapa, path + "mapa.csv")
@@ -392,21 +524,35 @@ def main():
                         # Se crea el grafo como una lista de adyacencias
                         graph[a].append(b)
                         graph[b].append(a)
-                    print("Ended")
-                    time.sleep(5000)
+                    estado = estadosMoRoomba['recargando']
+                    path = BFS_SP(graph, (posicion[0], posicion[1]), (half_map, half_map))
+                    lspeed = 0
+                    rspeed = 0
+
 
             elif estado == estadosMoRoomba['limpiando']:
-                set_vacuuming(clientID, True)
-                lspeed, rspeed = limpiar()
+                charge, path, orientacion, mapa, posicion, lspeed, rspeed = limpiar(charge, path, posicion, orientacion, mapa, clientID, hRobot, graph)
+
             else:
-                lspeed, rspeed = cargar()
+                charge, path, orientacion, mapa, posicion, lspeed, rspeed = cargar(charge, path, orientacion, mapa, clientID, hRobot)
+                if charge == MAX_CHARGE and len(path) < 2:
+                    mapa = dirty_floor(mapa)
+                    graph = get_graph_from_map(mapa)
+                    estado = estadosMoRoomba['limpiando']
+
+                set_vacuuming(clientID, False)
 
             #pos = sim.simxGetObjectPosition(clientID, hRobot[-1], -1, sim.simx_opmode_blocking)
             #if orientacion == "arriba" or orientacion == "abajo":
 
             # Action
-            setSpeed(clientID, hRobot, 1, 1)
-            time.sleep(0.75)
+            setSpeed(clientID, hRobot, lspeed, rspeed)
+
+            time_interval = (start_time + SECOND_INTERVAL) - time.time()
+            if time_interval > 0:
+                time.sleep(time_interval)
+            else:
+                time.sleep(SECOND_INTERVAL)
 
         print('### Finishing...')
         sim.simxFinish(clientID)
