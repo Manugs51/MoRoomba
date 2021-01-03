@@ -13,7 +13,8 @@ import time
 # import cv2 as cv
 import numpy as np
 import sim
-from collections import defaultdict 
+from collections import defaultdict
+from Information import Information
 
 MAX_CHARGE = 300
 
@@ -465,8 +466,8 @@ def main():
     print('### Argument List:', str(sys.argv))
 
     # AQUI SE CAMBIA DONDE SE GUARDAN LOS LOGS DE ERROR Y EL MAPA
+    path = "D:\\Users\\Manuel Guerrero\\Desktop\\WorkingDirectoryCopelia\\MoRoomba\\MoRoomba\\"
     # path = "C:\\Users\\Miguel\\Documents\\MoRoomba\\"
-    path = "C:\\Users\\Miguel\\Documents\\MoRoomba\\"
     sys.stderr = open(path + "logerr.txt", "w")
 
     estado = estadosMoRoomba['mapeando']
@@ -478,7 +479,7 @@ def main():
          2: Base
          3: Sucio
     '''
-    map_size = 300
+    map_size = 100
     mapa = np.ones((map_size, map_size)) * -2
     half_map = map_size // 2
 
@@ -504,6 +505,8 @@ def main():
         print('### Connected to remote API server')
         hRobot = getRobotHandles(clientID) ##hRobot contains '[lmh, rmh], sonar, cam'
         SECOND_INTERVAL = 1
+        
+        information = Information()
 
         while sim.simxGetConnectionId(clientID) != -1:
             # Perception
@@ -553,7 +556,10 @@ def main():
                 time.sleep(time_interval)
             else:
                 time.sleep(SECOND_INTERVAL)
-
+            
+            information.update(mapa, estado, posicion, charge)
+            
+        # End main while
         print('### Finishing...')
         sim.simxFinish(clientID)
 
