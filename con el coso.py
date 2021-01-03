@@ -20,84 +20,8 @@ estadosMoRoomba = {'mapeando': 'mapeando', 'limpiando': 'limpiando', 'recargando
 
 orientaciones = {'derecha': 'derecha', 'arriba': 'arriba', 'izquierda': 'izquierda', 'abajo': 'abajo'}
 
-
 # --------------------------------------------------------------------------
 
-def transform_map_to_edges(mapa):
-    edges = [] # [[]]
-    '''
-        Para cada casilla se comprueban los vecinos, solo el de la derecha y abajo de cada uno, asi se asegura el 
-          que se cubre todo sin repeticion. Solo se comprueba si:
-            1: la propia casilla está vacia (0, puede navegar por ahi el robot) y
-            2: se añade si el respectivo vecino tambien es 0
-          Las relaciones de vecindad son bidireccionales [(x,m),(y,n)] = [(y,n),(x,m)], aunque nunca se van a dar repeticiones
-    '''
-    for i in range(len(mapa) - 1):
-        for j in range(len(mapa[0]) - 1):
-            #print(i)
-            #print(j)
-            #print(mapa)
-            if mapa[i][j] == 0:
-                if mapa[i + 1][ j] == 0:
-                    edges.append([(i, j),(i + 1, j)])
-                if mapa[i][j + 1] == 0:
-                    edges.append([(i, j),(i, j + 1)])
-    return edges
-
-# --------------------------------------------------------------------------
-# https://www.geeksforgeeks.org/building-an-undirected-graph-and-finding-shortest-path-using-dictionaries-in-python/
-# Python implementation to find the  
-# shortest path in the graph using  
-# dictionaries  
-  
-# Function to find the shortest 
-# path between two nodes of a graph 
-def BFS_SP(graph, start, goal): 
-    explored = [] 
-      
-    # Queue for traversing the  
-    # graph in the BFS 
-    queue = [[start]] 
-      
-    # If the desired node is  
-    # reached 
-    if start == goal: 
-        print("Same Node") 
-        return
-      
-    # Loop to traverse the graph  
-    # with the help of the queue 
-    while queue: 
-        path = queue.pop(0) 
-        node = path[-1] 
-          
-        # Codition to check if the 
-        # current node is not visited 
-        if node not in explored: 
-            neighbours = graph[node] 
-              
-            # Loop to iterate over the  
-            # neighbours of the node 
-            for neighbour in neighbours: 
-                new_path = list(path) 
-                new_path.append(neighbour) 
-                queue.append(new_path) 
-                  
-                # Condition to check if the  
-                # neighbour node is the goal 
-                if neighbour == goal: 
-                    print("Shortest path = ", *new_path) 
-                    return
-            explored.append(node) 
-  
-    # Condition when the nodes  
-    # are not connected 
-    print("So sorry, but a connecting"\
-                "path doesn't exist :(") 
-    return
-
-
-# --------------------------------------------------------------------------
 def oritacion2posicion(orientacion):
     if orientacion == "derecha":
         return np.array([0, 1])
@@ -156,11 +80,10 @@ def getSonar(clientID, hRobot):
 #-------------------------------------------------------------------
 
 def comprobar_laterales(sonar, orientacion):
-    max_distance = 0.4
-    max_distance_sides = 0.7
+    max_distance = 0.5
     matriz_descubierta = np.array([[-1, 0, -1], [0, 0, 0], [-1, 0, -1]])
     # Izquierda
-    if sonar[0] < max_distance_sides or sonar[15] < max_distance_sides:
+    if sonar[0] < max_distance or sonar[15] < max_distance:
         matriz_descubierta[1][0] = 1
 
     # Delante
@@ -168,11 +91,11 @@ def comprobar_laterales(sonar, orientacion):
         matriz_descubierta[0][1] = 1
 
     # Derecha
-    if sonar[7] < max_distance_sides or sonar[8] < max_distance_sides:
+    if sonar[7] < max_distance or sonar[8] < max_distance:
         matriz_descubierta[1][2] = 1
 
     # Detras
-    if sonar[11] < max_distance_sides or sonar[12] < max_distance_sides:
+    if sonar[11] < max_distance or sonar[12] < max_distance:
         matriz_descubierta[2][1] = 1
 
     return matriz_descubierta
@@ -184,9 +107,9 @@ def rotate_matrix(matriz, orientacion):
     if orientacion == orientaciones['abajo']:
         return np.rot90(aux, 2)
     if orientacion == orientaciones['izquierda']:
-        return np.rot90(aux, 1)
-    if orientacion == orientaciones['derecha']:
         return np.rot90(aux, -1)
+    if orientacion == orientaciones['derecha']:
+        return np.rot90(aux, 1)
 
     return aux
 
@@ -221,23 +144,25 @@ def get_next_orientacion(orientacion, dir_giro):
 
 def rotate_robot(matriz_descubierta, orientacion, clientID, hRobot):
     # Voy a asumir que empezamos en una pared para simplificar de forma gorda
-    rotation_speed = 0.15
-    lspeed = -rotation_speed
-    rspeed = -rotation_speed
+    lspeed = 0
+    rspeed = 0
+    rotation_speed = 0.3
     if matriz_descubierta[1, 0] == 1 and matriz_descubierta[1, 2] == 1:
         # Si me veo en esta situación prefiero morir a pensar que hacer :)
         pass
     elif matriz_descubierta[1, 2] == 0:
         lspeed = rotation_speed
+        rspeed = -rotation_speed
         next_orientacion = get_next_orientacion(orientacion, "derecha")
     elif matriz_descubierta[1, 0] == 0:
         rspeed = rotation_speed
+        lspeed = -rotation_speed
         next_orientacion = get_next_orientacion(orientacion, "izquierda")
 
 
     while(1):
         angles = sim.simxGetObjectOrientation(clientID, hRobot[-1], -1, sim.simx_opmode_blocking)
-        epsilon = 0.005
+        epsilon = 0.01
         if orientacion == "arriba" or orientacion == "abajo":
             if angles[1][1] > -epsilon and angles[1][1] < epsilon:
                 break
@@ -250,60 +175,118 @@ def rotate_robot(matriz_descubierta, orientacion, clientID, hRobot):
         angles = sim
     return next_orientacion
 
-#-------------------------------------------------------------------
-
 def mapear(sonar, orientacion, mapa, posicion, clientID, hRobot, verbose=1):
     matriz_descubierta = comprobar_laterales(sonar, orientacion)
 
     lspeed = 1
     rspeed = 1
-    
+    if matriz_descubierta[0, 1] == 2:
+        return mapa, posicion, orientacion, True
+
     matriz_rotada = rotate_matrix(matriz_descubierta, orientacion)
     # Arriba
-    if mapa[posicion[0] - 1, posicion[1]] == -2:
-        mapa[posicion[0] - 1, posicion[1]] = matriz_rotada[0, 1]
+    mapa[posicion[0] - 1, posicion[1]] = matriz_rotada[0, 1]
     # Izquierda
-    if mapa[posicion[0], posicion[1] - 1] == -2:
-        mapa[posicion[0], posicion[1] - 1] = matriz_rotada[1, 0]
+    mapa[posicion[0], posicion[1] - 1] = matriz_rotada[1, 0]
     # Derecha
-    if mapa[posicion[0], posicion[1] + 1] == -2:
-        mapa[posicion[0], posicion[1] + 1] = matriz_rotada[1, 2]
-    # Abajo
-    if mapa[posicion[0] + 1, posicion[1]] == -2:
-        mapa[posicion[0] + 1, posicion[1]] = matriz_rotada[2, 1]
+    mapa[posicion[0], posicion[1] + 1] = matriz_rotada[1, 2]
 
-
-    if 2 in mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2] and \
-        mapa[posicion[0]+1, posicion[1]] != 2 and mapa[posicion[0], posicion[1]] != 2:
-        #print(mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2])
-        mapa = fill_reachable_map(mapa)
-        return mapa, posicion, orientacion, True
+    posicion = posicion + oritacion2posicion(orientacion)
 
     if matriz_descubierta[0, 1] == 1:
         if verbose > 0:
             print("ROTANDO")
         orientacion = rotate_robot(matriz_descubierta, orientacion, clientID, hRobot)
-    else:
-        posicion = posicion + oritacion2posicion(orientacion)
 
 
     if verbose > 0:
-        print(orientacion)
         #print(matriz_descubierta[0])
         #print(matriz_descubierta[1])
         #print(matriz_descubierta[2])
-        #print(mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2])
+
+        print(orientacion)
 
     return mapa, posicion, orientacion, False
 
+
+def transform_map_to_edges(mapa):
+    edges = [] # [[]]
+    '''
+        Para cada casilla se comprueban los vecinos, solo el de la derecha y abajo de cada uno, asi se asegura el 
+          que se cubre todo sin repeticion. Solo se comprueba si:
+            1: la propia casilla está vacia (0, puede navegar por ahi el robot) y
+            2: se añade si el respectivo vecino tambien es 0
+          Las relaciones de vecindad son bidireccionales [(x,m),(y,n)] = [(y,n),(x,m)], aunque nunca se van a dar repeticiones
+    '''
+    for i in range(len(mapa) - 1):
+        for j in range(len(mapa[0]) - 1):
+            if mapa[i, j] == 0:
+                if mapa[i + 1, j] == 0:
+                    edges.append([(i, j),(i + 1, j])
+                if mapa[i, j + 1] == 0:
+                    edges.append([(i, j),(i, j + 1])
+    return edges
 #-------------------------------------------------------------------
 
+# https://www.geeksforgeeks.org/building-an-undirected-graph-and-finding-shortest-path-using-dictionaries-in-python/
+# Python implementation to find the  
+# shortest path in the graph using  
+# dictionaries  
+  
+# Function to find the shortest 
+# path between two nodes of a graph 
+def BFS_SP(graph, start, goal): 
+    explored = [] 
+      
+    # Queue for traversing the  
+    # graph in the BFS 
+    queue = [[start]] 
+      
+    # If the desired node is  
+    # reached 
+    if start == goal: 
+        print("Same Node") 
+        return
+      
+    # Loop to traverse the graph  
+    # with the help of the queue 
+    while queue: 
+        path = queue.pop(0) 
+        node = path[-1] 
+          
+        # Codition to check if the 
+        # current node is not visited 
+        if node not in explored: 
+            neighbours = graph[node] 
+              
+            # Loop to iterate over the  
+            # neighbours of the node 
+            for neighbour in neighbours: 
+                new_path = list(path) 
+                new_path.append(neighbour) 
+                queue.append(new_path) 
+                  
+                # Condition to check if the  
+                # neighbour node is the goal 
+                if neighbour == goal: 
+                    print("Shortest path = ", *new_path) 
+                    return
+            explored.append(node) 
+  
+    # Condition when the nodes  
+    # are not connected 
+    print("So sorry, but a connecting"\ 
+                "path doesn't exist :(") 
+    return
+
 def limpiar():
+    go_to_nearest(3)
     return 0, 0
 
 #-------------------------------------------------------------------
 
 def cargar():
+    go_to_nearest(2)
     return 0, 0
 
 # --------------------------------------------------------------------------
@@ -318,19 +301,10 @@ def set_vacuuming(clientID, vacuuming):
 
 def save_map_to_file(mapa, file_path):
     np.savetxt(file_path, mapa.astype(int), fmt='%i', delimiter=";")
-
-# --------------------------------------------------------------------------
-
-def fill_reachable_map(mapa):
-    for i in range(mapa.shape[0]):
-        in_horizontal_limit = False
-        for j in range(mapa.shape[1]):
-            if mapa[i, j] == 1:
-                in_horizontal_limit = not in_horizontal_limit
-            elif mapa[i, j] == -2 and in_horizontal_limit:
-                mapa[i, j] = -1
-
-    return mapa
+    #with open(file_path, 'wb') as f:
+    #    for line in mapa:
+    #        print(line)
+    #        np.savetxt(f, line, fmt='%.2f')
 
 # --------------------------------------------------------------------------
 
@@ -341,7 +315,6 @@ def main():
     print('### Argument List:', str(sys.argv))
 
     # AQUI SE CAMBIA DONDE SE GUARDAN LOS LOGS DE ERROR Y EL MAPA
-    # path = "C:\\Users\\Miguel\\Documents\\MoRoomba\\"
     path = "D:\\Users\\Manuel Guerrero\\Desktop\\WorkingDirectoryCopelia\\MoRoomba\\MoRoomba\\"
     sys.stderr = open(path + "logerr.txt", "w")
 
@@ -352,6 +325,7 @@ def main():
          0: Vacio
          1: Obstaculo
          2: Base
+         3: sucio
     '''
     map_size = 100
     mapa = np.ones((map_size, map_size)) * -2
@@ -363,7 +337,6 @@ def main():
     orientacion = orientaciones['arriba']
     
     graph = defaultdict(list)
-    edges = []
 
     sim.simxFinish(-1) # just in case, close all opened connections
 
@@ -383,8 +356,7 @@ def main():
 
             if estado == estadosMoRoomba['mapeando']:
                 set_vacuuming(clientID, False)
-                mapa, posicion, orientacion, ended = mapear(sonar, orientacion, mapa, posicion, clientID, hRobot)                 
-                save_map_to_file(mapa, path + "mapa.csv")
+                mapa, posicion, orientacion, ended = mapear(sonar, orientacion, mapa, posicion, clientID, hRobot)
                 if ended:
                     edges = transform_map_to_edges(mapa)
                     for edge in edges:
@@ -393,18 +365,19 @@ def main():
                         graph[a].append(b)
                         graph[b].append(a)
                     print("Ended")
-                    time.sleep(5000)
+                    sleep(5000)
+                save_map_to_file(mapa, path + "mapa.csv")
 
             elif estado == estadosMoRoomba['limpiando']:
                 set_vacuuming(clientID, True)
-                lspeed, rspeed = limpiar()
+                lspeed, rspeed = limpiar(mapa, posicion)
             else:
                 lspeed, rspeed = cargar()
 
 
             # Action
             setSpeed(clientID, hRobot, 1, 1)
-            time.sleep(0.75)
+            time.sleep(0.5)
 
         print('### Finishing...')
         sim.simxFinish(clientID)
