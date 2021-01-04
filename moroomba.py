@@ -273,13 +273,21 @@ def rotate_robot(matriz_descubierta, orientacion, clientID, hRobot):
         angles = sim.simxGetObjectOrientation(clientID, hRobot[-1], -1, sim.simx_opmode_blocking)
         epsilon = 0.005
         if orientacion == "arriba" or orientacion == "abajo":
+            
             if angles[1][1] > -epsilon and angles[1][1] < epsilon:
                 break
+            elif angles[1][1] > -np.pi/8 and angles[1][1] < np.pi/8:
+                setSpeed(clientID, hRobot, lspeed, rspeed)
+            else:
+                setSpeed(clientID, hRobot, lspeed*5, rspeed*5)
         else:
             abs_angle = abs(angles[1][1])
             if abs_angle > (np.pi / 2 - epsilon):
                 break
-        setSpeed(clientID, hRobot, lspeed, rspeed)
+            elif abs_angle > (np.pi / 2 - np.pi/8):
+                setSpeed(clientID, hRobot, lspeed, rspeed)
+            else:
+                setSpeed(clientID, hRobot, lspeed*5, rspeed*5)
         angles = sim
     return next_orientacion
 
@@ -457,7 +465,7 @@ def search_closest_dirty_spot(posicion, orientacion, mapa):
         for j in range(3):
             if alrededor[i, j] == 3:
                 pos = posicion + np.array([i - 1, j - 1])
-                # Preferimos las posiciones adyacentes
+                # Preferimos las posiciones adyacentes TODO esto sigue fallando
                 if ((i + j) % 2 != 0) or ((i == 2) and (j == 0)):
                     return pos
 
