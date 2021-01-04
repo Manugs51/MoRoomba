@@ -3,7 +3,9 @@ import pygame.event as EVENTS
 import pygame.locals as LOCALS
 
 class Information:
-    def __init__(self):
+
+
+    def __init__(self, max_charge):
         pygame.init()
         self.font = pygame.font.SysFont("Comic Sans MS", 30)
         self.window_w = 900
@@ -15,7 +17,19 @@ class Information:
         self.map = []
         self.current_position = []
         self.charge = 200
-    
+        self.max_charge = str(max_charge)
+
+
+    def map_state(self, state):
+        if state == "mapeando":
+            return "Mapping"
+        if state == "recargando":
+            return "Charging"
+        if state == "limpiando":
+            return "Cleaning"
+        return state
+
+
     #Close the screen
     def quit(self):
         pygame.quit()
@@ -48,14 +62,14 @@ class Information:
                 self.quit()
         
         self.map = map
-        self.state = state
+        self.state = self.map_state(state)
         self.current_position = current_position
         self.charge = charge
         
         self.window.fill((255,255,255))
         state_text = self.font.render("State: " + self.state, False, (0,0,0))
         self.window.blit(state_text, (20,20))
-        state_text = self.font.render("Battery: " + str(self.charge), False, (0,0,0))
+        state_text = self.font.render("Battery: " + str(self.charge) + "/" + self.max_charge, False, (0,0,0))
         self.window.blit(state_text, (20,60))
         self.paint_map()
         pygame.display.update()

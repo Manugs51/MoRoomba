@@ -17,10 +17,14 @@ import sim
 from collections import defaultdict
 from Information import Information
 
-MAX_CHARGE = 300
+MAX_CHARGE = 200
 SKIP_MAP = False
 SECOND_INTERVAL = 1
-
+ROTATION_SPEED = 0.15
+LINEAR_SPEED = 2
+MAX_DISTANCE = 0.15
+MAX_DISTANCE_SIDES = 0.4
+CHARGE_RATE = 10
 estadosMoRoomba = {'mapeando': 'mapeando', 'limpiando': 'limpiando', 'recargando': 'recargando'}
 
 orientaciones = {'derecha': 'derecha', 'arriba': 'arriba', 'izquierda': 'izquierda', 'abajo': 'abajo'}
@@ -163,23 +167,21 @@ def getSonar(clientID, hRobot):
 #-------------------------------------------------------------------
 
 def comprobar_laterales(sonar, orientacion):
-    max_distance = 0.15
-    max_distance_sides = 0.7
     matriz_descubierta = np.array([[-1, 0, -1], [0, 0, 0], [-1, 0, -1]])
     # Izquierda
-    if sonar[0] < max_distance_sides or sonar[15] < max_distance_sides:
+    if sonar[0] < MAX_DISTANCE_SIDES or sonar[15] < MAX_DISTANCE_SIDES:
         matriz_descubierta[1][0] = 1
 
     # Delante
-    if sonar[3] < max_distance or sonar[4] < max_distance:
+    if sonar[3] < MAX_DISTANCE or sonar[4] < MAX_DISTANCE:
         matriz_descubierta[0][1] = 1
 
     # Derecha
-    if sonar[7] < max_distance_sides or sonar[8] < max_distance_sides:
+    if sonar[7] < MAX_DISTANCE_SIDES or sonar[8] < MAX_DISTANCE_SIDES or sonar[6] < MAX_DISTANCE_SIDES:
         matriz_descubierta[1][2] = 1
 
     # Detras
-    if sonar[11] < max_distance_sides or sonar[12] < max_distance_sides:
+    if sonar[11] < MAX_DISTANCE_SIDES or sonar[12] < MAX_DISTANCE_SIDES:
         matriz_descubierta[2][1] = 1
 
     return matriz_descubierta
@@ -226,13 +228,13 @@ def get_next_orientacion(orientacion, dir_giro):
 
 #-------------------------------------------------------------------
 
-def rotate_dir(clientID, hRobot, orientacion, dir="derecha", speed=.1):
+def rotate_dir(clientID, hRobot, orientacion, dir="derecha"):
     if dir == "derecha":
-        lspeed = speed
-        rspeed = -speed
+        lspeed = ROTATION_SPEED
+        rspeed = -ROTATION_SPEED
     else:
-        lspeed = -speed
-        rspeed = speed
+        lspeed = -ROTATION_SPEED
+        rspeed = ROTATION_SPEED
     next_orientacion = get_next_orientacion(orientacion, dir)
 
     while(1):
@@ -254,17 +256,16 @@ def rotate_dir(clientID, hRobot, orientacion, dir="derecha", speed=.1):
 
 def rotate_robot(matriz_descubierta, orientacion, clientID, hRobot):
     # Voy a asumir que empezamos en una pared para simplificar de forma gorda
-    rotation_speed = 0.1
-    lspeed = -rotation_speed
-    rspeed = -rotation_speed
+    lspeed = -ROTATION_SPEED
+    rspeed = -ROTATION_SPEED
     if matriz_descubierta[1, 0] == 1 and matriz_descubierta[1, 2] == 1:
         # Si me veo en esta situación prefiero morir a pensar que hacer :)
         pass
     elif matriz_descubierta[1, 2] == 0:
-        lspeed = rotation_speed
+        lspeed = ROTATION_SPEED
         next_orientacion = get_next_orientacion(orientacion, "derecha")
     elif matriz_descubierta[1, 0] == 0:
-        rspeed = rotation_speed
+        rspeed = ROTATION_SPEED
         next_orientacion = get_next_orientacion(orientacion, "izquierda")
 
 
@@ -284,7 +285,7 @@ def rotate_robot(matriz_descubierta, orientacion, clientID, hRobot):
 
 #-------------------------------------------------------------------
 
-def mapear(sonar, orientacion, mapa, posicion, clientID, hRobot, verbose=1):
+def mapear(charge, sonar, orientacion, mapa, posicion, clientID, hRobot, verbose=1):
     matriz_descubierta = comprobar_laterales(sonar, orientacion)
 
     lspeed = 1
@@ -308,9 +309,9 @@ def mapear(sonar, orientacion, mapa, posicion, clientID, hRobot, verbose=1):
     if 2 in mapa[posicion[0]-1:posicion[0]+2, posicion[1]-1:posicion[1] + 2] and \
         mapa[posicion[0]+1, posicion[1]] != 2 and mapa[posicion[0], posicion[1]] != 2:
         mapa = fill_reachable_map(mapa)
-        return mapa, posicion, orientacion, True
+        return charge, mapa, posicion, orientacion, True
 
-    if matriz_descubierta[0, 1] == 1:
+    if matriz_descubierta[0, 1] == 1 or (matriz_descubierta[1, 2] == 0):
         if verbose > 0:
             print("ROTANDO")
         orientacion = rotate_robot(matriz_descubierta, orientacion, clientID, hRobot)
@@ -320,7 +321,8 @@ def mapear(sonar, orientacion, mapa, posicion, clientID, hRobot, verbose=1):
     if verbose > 0:
         print(orientacion)
 
-    return mapa, posicion, orientacion, False
+    charge = charge - 1
+    return charge, mapa, posicion, orientacion, False
 
 #-------------------------------------------------------------------
 def limpiar(charge, posicion, path, orientacion, mapa, clientID, hRobot, graph):
@@ -341,16 +343,16 @@ def limpiar(charge, posicion, path, orientacion, mapa, clientID, hRobot, graph):
 
     charge = charge - 1
 
-    return charge, path, orientacion, mapa, posicion, 1, 1
+    return charge, path, orientacion, mapa, posicion, LINEAR_SPEED, LINEAR_SPEED 
 
 #-------------------------------------------------------------------
 
 def cargar(charge, path, orientacion, mapa, clientID, hRobot):
     if len(path) > 1:
-        lspeed = 1
-        rspeed = 1
+        lspeed = LINEAR_SPEED
+        rspeed = LINEAR_SPEED
     else:
-        charge = np.min([MAX_CHARGE, charge + 25])
+        charge = np.min([MAX_CHARGE, charge + CHARGE_RATE])
         print("Charging... (", charge, "/", MAX_CHARGE, ")", sep="")
 
         lspeed = 0
@@ -406,7 +408,8 @@ def follow_path(path, orientacion, mapa, clientID, hRobot, cheat_time=False):
         spin = True
         orientacion = rotate_dir(clientID, hRobot, orientacion, dir_giro)
 
-    mapa[path[0,0], path[0,1]] = 0
+    if mapa[path[0,0], path[0,1]] != 2:
+        mapa[path[0,0], path[0,1]] = 0
 
     path = path[1:]
     ret_path = path[0]
@@ -527,7 +530,7 @@ def main():
         print('### Connected to remote API server')
         hRobot = getRobotHandles(clientID) ##hRobot contains '[lmh, rmh], sonar, cam'
 
-        information = Information()
+        information = Information(MAX_CHARGE)
 
         while sim.simxGetConnectionId(clientID) != -1:
             # Perception
@@ -536,10 +539,10 @@ def main():
             start_time = time.time()
 
             if estado == estadosMoRoomba['mapeando']:
-                lspeed = 1
-                rspeed = 1
+                lspeed = LINEAR_SPEED
+                rspeed = LINEAR_SPEED
                 set_vacuuming(clientID, False)
-                mapa, posicion, orientacion, ended = mapear(sonar, orientacion, mapa, posicion, clientID, hRobot)
+                charge, mapa, posicion, orientacion, ended = mapear(charge, sonar, orientacion, mapa, posicion, clientID, hRobot)
                 save_map_to_file(mapa, path_archive + "mapa.csv")
                 if ended:
                     edges = transform_map_to_edges(mapa)
@@ -553,10 +556,18 @@ def main():
                     lspeed = 0
                     rspeed = 0
                     pickle.dump( mapa, open(path_archive + "mapa.p", "wb" ))
+                    mapa = dirty_floor(mapa)
+
 
 
             elif estado == estadosMoRoomba['limpiando']:
                 charge, path, orientacion, mapa, posicion, lspeed, rspeed = limpiar(charge, posicion, path, orientacion, mapa, clientID, hRobot, graph)
+                if charge < (MAX_CHARGE // 4):
+                    path = BFS_SP(graph, (posicion[0], posicion[1]), (half_map, half_map))
+                    estado = estadosMoRoomba['recargando']
+                    lspeed = 0
+                    rspeed = 0
+
                 save_map_to_file(mapa, path_archive + "mapa.csv")
                 print(posicion)
 
@@ -566,7 +577,6 @@ def main():
 
                 charge, path, orientacion, mapa, posicion, lspeed, rspeed = cargar(charge, path, orientacion, mapa, clientID, hRobot)
                 if charge == MAX_CHARGE and len(path) < 2:
-                    mapa = dirty_floor(mapa)
                     graph = get_graph_from_map(mapa)
                     estado = estadosMoRoomba['limpiando']
 
