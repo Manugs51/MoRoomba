@@ -16,6 +16,7 @@ class Information:
         self.state = ""
         self.map = []
         self.current_position = []
+        self.orientacion = "Up"
         self.charge = 200
         self.max_charge = str(max_charge)
 
@@ -29,6 +30,17 @@ class Information:
             return "Cleaning"
         return state
 
+
+    def map_orientacion(self, orientacion):
+        if orientacion == "izquierda":
+            return "Left"
+        if orientacion == "derecha":
+            return "Right"
+        if orientacion == "arriba":
+            return "Up"
+        if orientacion == "abajo":
+            return "Down"
+        return orientacion
 
     #Close the screen
     def quit(self):
@@ -55,7 +67,7 @@ class Information:
         pygame.draw.rect(self.window, (150,150,150), (coord_x, coord_y, cell_size, cell_size), 0)
 
     
-    def update(self, map, state, current_position, charge):
+    def update(self, map, state, current_position, charge, orientacion):
         #Check all events
         for e in EVENTS.get():
             if e.type == LOCALS.QUIT:
@@ -65,12 +77,15 @@ class Information:
         self.state = self.map_state(state)
         self.current_position = current_position
         self.charge = charge
+        self.orientacion = self.map_orientacion(orientacion)
         
         self.window.fill((255,255,255))
         state_text = self.font.render("State: " + self.state, False, (0,0,0))
         self.window.blit(state_text, (20,20))
         state_text = self.font.render("Battery: " + str(self.charge) + "/" + self.max_charge, False, (0,0,0))
         self.window.blit(state_text, (20,60))
+        state_text = self.font.render("Orientation: " + str(self.orientacion), False, (0,0,0))
+        self.window.blit(state_text, (20,100))
         self.paint_map()
         pygame.display.update()
 

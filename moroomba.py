@@ -243,11 +243,18 @@ def rotate_dir(clientID, hRobot, orientacion, dir="derecha"):
         if orientacion == "arriba" or orientacion == "abajo":
             if angles[1][1] > -epsilon and angles[1][1] < epsilon:
                 break
+            elif angles[1][1] > -np.pi/8 and angles[1][1] < np.pi/8:
+                setSpeed(clientID, hRobot, lspeed, rspeed)
+            else:
+                setSpeed(clientID, hRobot, lspeed*5, rspeed*5)
         else:
             abs_angle = abs(angles[1][1])
             if abs_angle > (np.pi / 2 - epsilon):
                 break
-        setSpeed(clientID, hRobot, lspeed, rspeed)
+            elif abs_angle > (np.pi / 2 - np.pi/8):
+                setSpeed(clientID, hRobot, lspeed, rspeed)
+            else:
+                setSpeed(clientID, hRobot, lspeed*5, rspeed*5)
         angles = sim
     return next_orientacion
 
@@ -338,8 +345,7 @@ def limpiar(charge, posicion, path, orientacion, mapa, clientID, hRobot, graph):
     if len(path) < 2:
         dirty_spot = search_closest_dirty_spot(posicion, orientacion, mapa)
         if dirty_spot is None:
-            # Hacer que vuelva a la base. CASA LIMPIA, EXITO SEÑORES
-            pass
+            return charge, path, orientacion, mapa, posicion, 0, 0, True 
         else:
             path = BFS_SP(graph, posicion, dirty_spot)
 
@@ -351,7 +357,7 @@ def limpiar(charge, posicion, path, orientacion, mapa, clientID, hRobot, graph):
 
     charge = charge - 1
 
-    return charge, path, orientacion, mapa, posicion, LINEAR_SPEED, LINEAR_SPEED 
+    return charge, path, orientacion, mapa, posicion, LINEAR_SPEED, LINEAR_SPEED, False
 
 #-------------------------------------------------------------------
 
@@ -359,6 +365,7 @@ def cargar(charge, path, orientacion, mapa, clientID, hRobot):
     if len(path) > 1:
         lspeed = LINEAR_SPEED
         rspeed = LINEAR_SPEED
+        charge = charge - 1
     else:
         charge = np.min([MAX_CHARGE, charge + CHARGE_RATE])
         print("Charging... (", charge, "/", MAX_CHARGE, ")", sep="")
@@ -416,8 +423,8 @@ def follow_path(path, orientacion, mapa, clientID, hRobot, cheat_time=False):
         spin = True
         orientacion = rotate_dir(clientID, hRobot, orientacion, dir_giro)
 
-    if mapa[path[0,0], path[0,1]] != 2:
-        mapa[path[0,0], path[0,1]] = 0
+    #if mapa[path[0,0], path[0,1]] != 2:
+    #    mapa[path[0,0], path[0,1]] = 0
 
     path = path[1:]
     ret_path = path[0]
@@ -466,7 +473,7 @@ def search_closest_dirty_spot(posicion, orientacion, mapa):
             if alrededor[i, j] == 3:
                 pos = posicion + np.array([i - 1, j - 1])
                 # Preferimos las posiciones adyacentes TODO esto sigue fallando
-                if ((i + j) % 2 != 0) or ((i == 2) and (j == 0)):
+                if ((i == 0) and (j == 1)) or ((i == 1) and (j == 0)) or ((i == 2) and (j == 1)) or ((i == 1) and (j == 2)):
                     return pos
 
     if pos is not None:
@@ -569,12 +576,13 @@ def main():
 
 
             elif estado == estadosMoRoomba['limpiando']:
-                charge, path, orientacion, mapa, posicion, lspeed, rspeed = limpiar(charge, posicion, path, orientacion, mapa, clientID, hRobot, graph)
-                if charge < (MAX_CHARGE // 4):
+                charge, path, orientacion, mapa, posicion, lspeed, rspeed, ended = limpiar(charge, posicion, path, orientacion, mapa, clientID, hRobot, graph)
+                if charge < (MAX_CHARGE // 4) or ended:
                     path = BFS_SP(graph, (posicion[0], posicion[1]), (half_map, half_map))
                     estado = estadosMoRoomba['recargando']
                     lspeed = 0
                     rspeed = 0
+                
 
                 save_map_to_file(mapa, path_archive + "mapa.csv")
                 print(posicion)
@@ -602,7 +610,7 @@ def main():
             else:
                 time.sleep(SECOND_INTERVAL)
 
-            information.update(mapa, estado, posicion, charge)
+            information.update(mapa, estado, posicion, charge, orientacion)
 
         # End main while
         print('### Finishing...')
