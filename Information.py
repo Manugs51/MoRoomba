@@ -72,6 +72,13 @@ class Information:
         for e in EVENTS.get():
             if e.type == LOCALS.QUIT:
                 self.quit()
+            if e.type == pygame.MOUSEBUTTONDOWN:
+                cell_size = 15
+                coord_x, coord_y = e.pos
+                j = (coord_x + ((len(self.map[0]) * cell_size - self.window_w)//2))//cell_size
+                i = (coord_y + ((len(self.map) * cell_size - self.window_h)//2))//cell_size
+                map[i][j] = 3
+                
         
         self.map = map
         self.state = self.map_state(state)
